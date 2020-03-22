@@ -1,12 +1,14 @@
+require("mobdebug").start()
+require("mobdebug").coro()
 ----------------------------------------------- Demo game - Basilio Germán
 local physics = require("physics")
 local widget = require("widget")
-local dynacam = require("plugin.dynacam")
+local dynacam = require("dynacam")
 ----------------------------------------------- Variables
 local camera1
 local camera2
 
-local lightData
+local lightsData
 
 local mapGroup
 local healthBox
@@ -22,10 +24,7 @@ local holdingKey = {
 	down = false,
 }
 ----------------------------------------------- Constants
-local CAM_PAN_LIMIT = {
-	X = display.actualContentHeight * 0.4,
-	Y = display.viewableContentHeight * 0.4,
-}
+local SLIDERS_ENABLED = true
 
 local FILLS = {
 	[1] = {
@@ -39,7 +38,7 @@ local FILLS = {
 		zMult = 1,
 	},
 }
-local MAP = {
+local TILE_MAP = {
 	{1,1,1,1,1,1,1,2,1,1,2,2},
 	{1,1,1,2,1,1,1,1,1,1,1,1},
 	{1,1,2,2,2,2,1,2,1,1,1,2},
@@ -51,7 +50,6 @@ local MAP = {
 }
 
 local ACCELERATION = 1000
-
 local FORCES_KEY = {
 	right = {torque = ACCELERATION * 5},
 	left = {torque = -ACCELERATION * 5},
@@ -70,20 +68,20 @@ local function keyListener(event)
 	end
 end
 
-local function createEdges()
-	
-end
-
 local function createBackground()
-	-- Tiles
+	-- Grid Tiled background
 	local size = 500
-	for y = 1, #MAP do
-		for x = 1, #MAP[y] do
-			local rect = dynacam.newRect(x * size, y * size, size, size)
-			rect.fill = {type = "image", filename = FILLS[MAP[y][x]].diffuse}
-			rect.normal = {type = "image", filename = FILLS[MAP[y][x]].normal}
+	for y = 1, #TILE_MAP do
+		for x = 1, #TILE_MAP[y] do
+			local fillData = FILLS[TILE_MAP[y][x]]
 			
-			rect.normal.effect.zMult = FILLS[MAP[y][x]].zMult
+			local offsetX = x * size
+			local offsetY = y * size
+			
+			local rect = dynacam.newRect(offsetX, offsetY, size, size)
+			rect.fill = {type = "image", filename = fillData.diffuse}
+			rect.normal = {type = "image", filename = fillData.normal}
+			rect.normal.effect.zMult = fillData.zMult
 			
 			mapGroup:insert(rect)
 		end
@@ -92,76 +90,39 @@ end
 
 local function addlights()
 	-- Add lights to world
-	for lIndex = 1, #lightData do 
-		local lData = lightData[lIndex]
+	for lIndex = 1, #lightsData do 
+		local lightData = lightsData[lIndex]
 		
 		local lOptions = {
-			color = lData.color,
+			color = lightData.color,
 		}
 		local light = dynacam.newLight(lOptions)
 		
-		light.x = lData.position[1]
-		light.y = lData.position[2]
-		light.z = lData.position[3]
-		light.attenuationFactors = lData.attenuationFactors
+		light.x = lightData.position[1]
+		light.y = lightData.position[2]
+		light.z = lightData.position[3]
+		light.attenuationFactors = lightData.attenuationFactors
 		mapGroup:insert(light)
 	end
 end
 
-local function addTestSprites()
-	 -- Test sprite coin
-	local coinSpriteSheet = {
-		sheetData = {width = 34, height = 34, numFrames = 16},
-		sequenceData = {{name = "idle", start = 1, count = 16, time = 1000}},
-		diffuse = "images/spinning_coin_gold.png",
-		normal = "images/spinning_coin_gold_n.png",
-	}
-	local cDiffuseSheet = graphics.newImageSheet(coinSpriteSheet.diffuse, coinSpriteSheet.sheetData)
-	local cNormalSheet = graphics.newImageSheet(coinSpriteSheet.normal, coinSpriteSheet.sheetData)
-	
-	local gridSize = 8
-	for index = 1, 40 do
-		local x = index % gridSize
-		local y = math.ceil(index * (1 / gridSize))
+local function coinTap(event)
+	local coinGroup = event.target
+	if not coinGroup.collected then
+		coinGroup.collected = true -- Avoid double collection
 		
-		local coinGroup = dynacam.newGroup()
-		coinGroup.x = 1500 + (x * 100)
-		coinGroup.y = 1200 + (y * 100)
+		coinGroup:applyAngularImpulse(5000)
 		
-		local coinSprite = dynacam.newSprite(cDiffuseSheet, cNormalSheet, coinSpriteSheet.sequenceData)
-		coinSprite:setSequence("idle")
-		coinSprite:play()
-		coinGroup:insert(coinSprite)
-		
-		dynacam.addBody(coinGroup, "dynamic", {friction = 0.5, bounce = 0.1, density = 1, radius = 17})
-		
-		coinGroup.angularDamping = 0.5
-		coinGroup.linearDamping = 0.8
-		
-		local coinLight = dynacam.newLight({color = {1, 0.843, 0, 0.25}})
-		
-		coinLight.z = 0.05
-		coinLight.scale = 1 / 1.61803398874989
-		coinGroup:insert(coinLight)
-		coinGroup.light = coinLight
-		
-		coinGroup:addEventListener("tap", function(event)
-			local coinGroup = event.target
-			if not coinGroup.collected then
-				coinGroup.collected = true
-				
-				coinGroup:applyAngularImpulse(5000)
-				
-				transition.to(coinGroup.light, {scale = 0.01, time = 400, transition = easing.inQuad})
-				transition.to(coinGroup, {alpha = 0, time = 400, transition = easing.inQuad})
-				transition.to(coinGroup, {xScale = 0.1, yScale = 0.1, time = 500, transition = easing.inQuad, onComplete = display.remove})
-				transition.to(coinGroup, {xScale = 0.1, yScale = 0.1, time = 500, transition = easing.inQuad, onComplete = display.remove})
-			end
-		end)
-		
-		mapGroup:insert(coinGroup)
+		transition.to(coinGroup.light, {scale = 0.01, time = 400, transition = easing.inQuad})
+		transition.to(coinGroup, {alpha = 0, time = 400, transition = easing.inQuad})
+		transition.to(coinGroup, {xScale = 0.1, yScale = 0.1, time = 500, transition = easing.inQuad, onComplete = display.remove})
+		transition.to(coinGroup, {xScale = 0.1, yScale = 0.1, time = 500, transition = easing.inQuad, onComplete = display.remove})
 	end
 	
+	return true
+end
+
+local function addHealthBox()
 	-- Test sprite health box
 	healthBox = dynacam.newGroup()
 	healthBox.x = 1000
@@ -182,7 +143,6 @@ local function addTestSprites()
 	healthBox:insert(sprite)
 	
 	local healthLight = dynacam.newLight({color = {1, 0, 0, 1}})
-	
 	healthLight.x = 0
 	healthLight.y = 0
 	healthLight.z = 0.1
@@ -195,24 +155,103 @@ local function addTestSprites()
 	healthBox.linearDamping = 0.6
 end
 
-local function addPlayerCharacter()
-	-- Player Character
+local function addCoinGrid()
+	 -- Test sprite coin
+	local coinSpriteSheet = {
+		sheetData = {width = 34, height = 34, numFrames = 16},
+		sequenceData = {{name = "idle", start = 1, count = 16, time = 1000}},
+		diffuse = "images/spinning_coin_gold.png",
+		normal = "images/spinning_coin_gold_n.png",
+	}
+	local cDiffuseSheet = graphics.newImageSheet(coinSpriteSheet.diffuse, coinSpriteSheet.sheetData)
+	local cNormalSheet = graphics.newImageSheet(coinSpriteSheet.normal, coinSpriteSheet.sheetData)
+	
+	local coinGridSize = 8
+	local numCoins = 40
+	
+	local coinGridX = 1500
+	local coinGridY = 1200
+	local coinGridSpacing = 100
+	local coinLightColor = {1, 0.843, 0, 0.25}
+	
+	for index = 1, numCoins do
+		local x = index % coinGridSize
+		local y = math.ceil(index * (1 / coinGridSize))
+		
+		local coinGroup = dynacam.newGroup()
+		coinGroup.x = coinGridX + (x * coinGridSpacing)
+		coinGroup.y = coinGridY + (y * coinGridSpacing)
+		
+		local coinSprite = dynacam.newSprite(cDiffuseSheet, cNormalSheet, coinSpriteSheet.sequenceData)
+		coinSprite:setSequence("idle")
+		coinSprite:play()
+		coinGroup:insert(coinSprite)
+		
+		dynacam.addBody(coinGroup, "dynamic", {friction = 0.5, bounce = 0.1, density = 1, radius = 17})
+		
+		coinGroup.angularDamping = 0.5
+		coinGroup.linearDamping = 0.8
+		
+		local coinLight = dynacam.newLight({color = coinLightColor})
+		coinLight.z = 0.05
+		coinLight.scale = 1 / 1.61803398874989
+		coinGroup:insert(coinLight)
+		coinGroup.light = coinLight
+		
+		coinGroup:addEventListener("tap", coinTap)
+		
+		mapGroup:insert(coinGroup)
+	end
+end
+
+local function pilotBigShip()
+	local isStill = (otherShip.angularVelocity < 5) and (otherShip.angularVelocity > -5)
+	if isStill then -- Only if ship is not spinning
+		controlObject = otherShip
+		otherShip.linearDamping = 0.01
+	end
+end
+
+local function addBigShip()
+	otherShip = dynacam.newImage("images/spaceship_carrier_02.png", "images/spaceship_carrier_02_n.png")
+	otherShip.x = 2750
+	otherShip.y = 1250
+	dynacam.addBody(otherShip, "dynamic", {friction = 0.5, bounce = 0, density = 20, box = {halfWidth = otherShip.width * 0.5, halfHeight = otherShip.height * 0.4}})
+	
+	otherShip.fMult = 100
+	otherShip.linearDamping = 0.5
+	otherShip:applyAngularImpulse(3000000)
+	mapGroup:insert(otherShip)
+	
+	otherShip:addEventListener("tap", pilotBigShip)
+end
+
+local function toggleSmallShipLight(event)
+	local pCharacter = event.target
+	local light = pCharacter.shipLight
+	
+	light.state = not light.state
+	local intensity = light.state and 1 or 0
+	
+	light.color[4] = intensity
+end
+
+local function addSmallShip()
 	smallShip = dynacam.newGroup()
 	smallShip.x = 800
 	smallShip.y = 800
 	smallShip.fMult = 1
 	mapGroup:insert(smallShip)
 	
-	local ship = dynacam.newImage("images/spaceship_carrier_01.png", "images/spaceship_carrier_01_n.png")
-	ship.fill.effect = "filter.pixelate"
-	ship.fill.effect.numPixels = 8
-	transition.to(ship.fill.effect, {time = 10000, numPixels = 1,}) -- Single transition
-	smallShip:insert(ship)
-	smallShip.ship = ship
+	local shipImage = dynacam.newImage("images/spaceship_carrier_01.png", "images/spaceship_carrier_01_n.png")
+	shipImage.fill.effect = "filter.pixelate"
+	shipImage.fill.effect.numPixels = 8
+	transition.to(shipImage.fill.effect, {time = 10000, numPixels = 1,}) -- Single transition
+	smallShip:insert(shipImage)
+	smallShip.ship = shipImage
 	
 	local shipLight = dynacam.newLight({color = {1, 1, 1, 1}})
-	
-	shipLight.x = 300
+	shipLight.x = 300 -- Place in front of ship
 	shipLight.y = 0
 	shipLight.z = 0.15
 	shipLight.state = true
@@ -224,18 +263,19 @@ local function addPlayerCharacter()
 	smallShip.angularDamping = 2
 	smallShip.linearDamping = 0.5
 	
-	smallShip:addEventListener("tap", function(event)
-		local pCharacter = event.target
-		local light = pCharacter.shipLight
-		
-		light.state = not light.state
-		local intensity = light.state and 1 or 0
-		
-		light.color[4] = intensity
-	end)
+	smallShip:addEventListener("tap", toggleSmallShipLight)
 end
 
-local function addTestOther()
+local function tapShapeGroup(event)
+	local shapesGroup = event.target
+	
+	transition.cancel(shapesGroup)
+	transition.to(shapesGroup, {x = shapesGroup.x + 500, transition = easing.inOutQuad, time = 1600})
+	
+	return true
+end
+
+local function addCommonDisplayObjects()
 	-- Text test
 	local textOptions = {
 		x = 1250,
@@ -315,18 +355,10 @@ local function addTestOther()
 	roundedRect.normal = {type = "image", filename = FILLS[2].normal}
 	shapesGroup:insert(roundedRect)
 	
-	transition.to(roundedRect, {delay = 5000, time = 2000, alpha = 0, xScale = 1.5, yScale = 0.5, onComplete = function(object)
-		display.remove(object)
-	end})
-
-	shapesGroup:addEventListener("tap", function(event)
-		local shapesGroup = event.target
-		
-		transition.cancel(shapesGroup)
-		transition.to(shapesGroup, {x = shapesGroup.x + 500, transition = easing.inOutQuad, time = 1600})
-		
-		return true
-	end)
+	-- Test removal
+	transition.to(roundedRect, {delay = 5000, time = 2000, alpha = 0, xScale = 1.5, yScale = 0.5, onComplete = display.remove})
+	-- Test listener grouping
+	shapesGroup:addEventListener("tap", tapShapeGroup)
 
 	-- Container
 	local container = dynacam.newContainer(200, 200)
@@ -334,26 +366,9 @@ local function addTestOther()
 	container.y = 1500
 	mapGroup:insert(container)
 	
-	-- newImage
+	-- newImage & container
 	local containerShip = dynacam.newImage("images/spaceship_carrier_02.png", "images/spaceship_carrier_02_n.png")
 	container:insert(containerShip)
-	
-	otherShip = dynacam.newImage("images/spaceship_carrier_02.png", "images/spaceship_carrier_02_n.png")
-	otherShip.x = 2750
-	otherShip.y = 1250
-	dynacam.addBody(otherShip, "dynamic", {friction = 0.5, bounce = 0, density = 20, box = {halfWidth = otherShip.width * 0.5, halfHeight = otherShip.height * 0.4}})
-	
-	otherShip.fMult = 100
-	otherShip.linearDamping = 0.5
-	otherShip:applyAngularImpulse(3000000)
-	mapGroup:insert(otherShip)
-	
-	otherShip:addEventListener("tap", function(event)
-		if (otherShip.angularVelocity < 5) and (otherShip.angularVelocity > -5) then
-			controlObject = otherShip
-			otherShip.linearDamping = 0.01
-		end
-	end)
 end
 
 local function addMoreTestSprites()
@@ -380,12 +395,12 @@ local function createWorld()
 	
 	createBackground()
 	addlights()
-	addTestOther()
-	addTestSprites()
+	addCommonDisplayObjects()
+	addCoinGrid()
+	addHealthBox()
 	addMoreTestSprites()
-	addPlayerCharacter()
-	
-	createEdges()
+	addSmallShip()
+	addBigShip()
 end
 
 local function sliderListener(event)
@@ -404,7 +419,7 @@ end
 
 local function createSlider(valueScale, offset, label, listener, defValue)
 	local sGroup = display.newGroup()
-	sGroup.alpha = 0.25
+	sGroup.alpha = 0.2
 	
 	local slider = widget.newSlider({
 		x = 0,
@@ -478,20 +493,20 @@ local function updateZoom(event)
 end
 
 local function createSliders()
-	if true then -- Sliders 
+	if SLIDERS_ENABLED then
 		
 		local sliderData = {
-			{scale = 0.02, offset = 0, label = "Co", listener = updateConstant, defValue = 20},
-			{scale = 0.05, offset = 0, label = "Li", listener = updateLinear, defValue = 60},
-			{scale = 0.5, offset = 0, label = "Qu", listener = updateQuadratic, defValue = 40},
+			{scale = 0.02, offset = 0, label = "Co", listener = updateConstant, defValue = 20}, -- Constant attenuation factor
+			{scale = 0.05, offset = 0, label = "Li", listener = updateLinear, defValue = 60}, -- Linear attenuation factor
+			{scale = 0.5, offset = 0, label = "Qu", listener = updateQuadratic, defValue = 40}, -- Quadratic attenuation factor
 			
-			{scale = 0.02, offset = 0.01, label = "Sc", listener = updateScale, defValue = 50},
+			{scale = 0.02, offset = 0.01, label = "Sc", listener = updateScale, defValue = 50}, -- Light scale
 			
-			{scale = 0.01, offset = 0, label = "Re", listener = updateColorR, defValue = 100},
-			{scale = 0.01, offset = 0, label = "Gr", listener = updateColorG, defValue = 100},
-			{scale = 0.01, offset = 0, label = "Bl", listener = updateColorB, defValue = 100},
+			{scale = 0.01, offset = 0, label = "Re", listener = updateColorR, defValue = 100}, -- Red
+			{scale = 0.01, offset = 0, label = "Gr", listener = updateColorG, defValue = 100}, -- Green
+			{scale = 0.01, offset = 0, label = "Bl", listener = updateColorB, defValue = 100}, -- Blue
 			
-			{scale = 0.02, offset = 0.5, label = "Zo", listener = updateZoom, defValue = 25},
+			{scale = 0.02, offset = 0.5, label = "Zo", listener = updateZoom, defValue = 25}, -- Zoom
 		}
 		
 		local currentX = display.screenOriginX
@@ -558,22 +573,22 @@ local function initialize()
 --	local hWidth = display.viewableContentWidth * 0.5
 --	local vertices1 = {0, 0, 0.625, 0, 0.375, 1, 0, 1}
 	camera1 = dynacam.newCamera({
-			damping = 10, 
-	--		width = hWidth,
-	--		vertices = vertices1,
+		damping = 10, 
+--		width = hWidth,
+--		vertices = vertices1,
 	})
 
---	local mIndex = 0
---	local modes = {"normal", "diffuse", "light", "listeners", false}
---	timer.performWithDelay(1500, function()
---		mIndex = mIndex + 1
---		if mIndex > #modes then
---			mIndex = 1
---		end
---		camera1:setDrawMode(modes[mIndex])
---	end, -1)
+	-- Auto Mode switcher
+	local mIndex = 0
+	local modes = {false, "normal", "diffuse", "light", "listeners"}
+	timer.performWithDelay(2500, function()
+		mIndex = mIndex + 1
+		if mIndex > #modes then
+			mIndex = 1
+		end
+		camera1:setDrawMode(modes[mIndex])
+	end, -1)
 	
---	camera1:setDrawMode("normal")
 --	camera1.anchorChildren = true
 --	camera1.anchorX = 0
 --	camera1.x = display.screenOriginX
@@ -590,12 +605,12 @@ local function initialize()
 	physics.start()
 	physics.setGravity(0, 0)
 	
-	lightData = {
+	lightsData = {
 		{position = {400, 400, 0.2}, color = {1, 1, 1, 1}},
 		{position = {700, 900, 0.2}, color = {1, 1, 1, 1}},
 		{position = {900, 900, 0.2}, color = {1, 1, 0, 1}},
 		{position = {0, 0, 0.2}, color = {1, 0, 1, 1}},
-		{position = {500, 2000, 0.05}, color = {0.1, 0.1, 0.1, 1}}, -- Black light?
+		{position = {500, 2000, 0.05}, color = {0.1, 0.1, 0.1, 1}},
 		{position = {2500, 800, 0.25}, color = {0, 1, 0, 1}},
 		{position = {2200, 1200, 0.15}, color = {0, 0.5, 1, 1}},
 		{position = {1400, 1800, 0.1}, color = {0, 0.5, 1, 1}},
@@ -604,16 +619,8 @@ local function initialize()
 	
 	Runtime:addEventListener("key", keyListener)
 end
------------------------------------------------ Module functions 
+----------------------------------------------- Execution
 initialize()
 createWorld()
 createSliders()
 startGame()
-
-local function testStuff()
---	timer.performWithDelay(11000, function()
---		display.remove(camera1)
---	end)
-end
-
-testStuff()
