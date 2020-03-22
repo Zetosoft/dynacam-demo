@@ -1,6 +1,5 @@
-require("mobdebug").start()
-require("mobdebug").coro()
 ----------------------------------------------- Demo game - Basilio Germán
+require("dependencies.index.index")("dependencies")("dynacam-demo") -- Register lib path and namespace (Shortens dependecy require path)
 local physics = require("physics")
 local widget = require("widget")
 local dynacam = require("dynacam")

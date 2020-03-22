@@ -3,7 +3,8 @@
 	"version": "1.0",
 	"main": "main.lua",
 	"dependencies": {
-		"dynacam":"git@github.com:Zetosoft/dynacam.git"
+		"dynacam":"git@github.com:Zetosoft/dynacam.git",
+		"index":"git@github.com:CetoBasilius/index.git"
 	},
 	"ignore": [
 
