@@ -1,0 +1,13 @@
+{
+	"name": "dynacam-demo",
+	"version": "1.0",
+	"main": "main.lua",
+	"dependencies": {
+		"dynacam":"git@github.com:Zetosoft/dynacam.git"
+	},
+	"ignore": [
+
+	],
+	"private": true
+}
+
